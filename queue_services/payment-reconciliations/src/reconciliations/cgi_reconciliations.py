@@ -108,8 +108,7 @@ async def _update_feedback(msg: Dict[str, any]):  # pylint:disable=too-many-loca
     has_errors, already_processed = await _process_ejv_feedback(group_batches['EJV'], file_name)
 
     if not already_processed:
-        if not APP_CONFIG.DISABLE_AP_FEEDBACK:
-            has_errors = await _process_ap_feedback(group_batches['AP']) or has_errors
+        has_errors = await _process_ap_feedback(group_batches['AP']) or has_errors
 
         if has_errors and not APP_CONFIG.DISABLE_EJV_ERROR_EMAIL:
             await _publish_mailer_events(file_name, minio_location)
@@ -254,6 +253,7 @@ def _fix_invoice_line(line):
 
 async def _update_invoice_status(invoice):
     """Update status to reversed if its a refund, else to completed."""
+    invoice.disbursement_date = datetime.now()
     if invoice.invoice_status_code in (InvoiceStatus.REFUNDED.value, InvoiceStatus.REFUND_REQUESTED.value):
         invoice.disbursement_status_code = DisbursementStatus.REVERSED.value
     else:

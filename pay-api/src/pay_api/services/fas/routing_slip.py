@@ -201,14 +201,14 @@ class RoutingSlip:  # pylint: disable=too-many-instance-attributes, too-many-pub
     def create_daily_reports(cls, date: str, **kwargs):
         """Create and return daily report for the day provided."""
         routing_slips: List[RoutingSlipModel] = RoutingSlipModel.search(
-            dict(
-                dateFilter=dict(
-                    endDate=date,
-                    startDate=date,
-                    target='created_on'
-                ),
-                excludeStatuses=[RoutingSlipStatus.VOID.value]
-            ),
+            {
+                'dateFilter': {
+                    'endDate': date,
+                    'startDate': date,
+                    'target': 'created_on'
+                },
+                'excludeStatuses': [RoutingSlipStatus.VOID.value]
+            },
             page=1, limit=0, return_all=True
         )[0]
 
@@ -234,21 +234,21 @@ class RoutingSlip:  # pylint: disable=too-many-instance-attributes, too-many-pub
                 if routing_slip.total_usd is not None:
                     total_cheque_usd += routing_slip.total_usd
 
-        report_dict = dict(
-            templateName='routing_slip_report',
-            reportName=f'Routing-Slip-Daily-Report-{date}',
-            templateVars=dict(
-                day=date,
-                reportDay=str(get_local_time(datetime.now())),
-                total=float(total),
-                numberOfCashReceipts=no_of_cash,
-                numberOfChequeReceipts=no_of_cheque,
-                totalCashInUsd=float(total_cash_usd),
-                totalChequeInUsd=float(total_cheque_usd),
-                totalCashInCad=float(total_cash_cad),
-                totalChequeInCad=float(total_cheque_cad)
-            )
-        )
+        report_dict = {
+            'templateName': 'routing_slip_report',
+            'reportName': f'Routing-Slip-Daily-Report-{date}',
+            'templateVars': {
+                'day': date,
+                'reportDay': str(get_local_time(datetime.now())),
+                'total': float(total),
+                'numberOfCashReceipts': no_of_cash,
+                'numberOfChequeReceipts': no_of_cheque,
+                'totalCashInUsd': float(total_cash_usd),
+                'totalChequeInUsd': float(total_cheque_usd),
+                'totalCashInCad': float(total_cash_cad),
+                'totalChequeInCad': float(total_cheque_cad)
+            }
+        }
 
         pdf_response = OAuthService.post(current_app.config.get('REPORT_API_BASE_URL'),
                                          kwargs['user'].bearer_token, AuthHeaderType.BEARER,
@@ -389,8 +389,7 @@ class RoutingSlip:  # pylint: disable=too-many-instance-attributes, too-many-pub
         if (patch_action := PatchActions.from_value(action)) is None:
             raise BusinessException(Error.PATCH_INVALID_ACTION)
 
-        routing_slip: RoutingSlipModel = RoutingSlipModel.find_by_number(rs_number)
-        if routing_slip is None:
+        if (routing_slip := RoutingSlipModel.find_by_number(rs_number)) is None:
             raise BusinessException(Error.FAS_INVALID_ROUTING_SLIP_NUMBER)
 
         if patch_action == PatchActions.UPDATE_STATUS:
@@ -418,6 +417,11 @@ class RoutingSlip:  # pylint: disable=too-many-instance-attributes, too-many-pub
                 routing_slip.total += correction_total
                 routing_slip.remaining_amount += correction_total
                 CommentModel(comment=comment, routing_slip_number=rs_number).flush()
+                # Set the routing slip status back to ACTIVE or COMPLETE, if it isn't created in CFS yet.
+                cfs_account = CfsAccountModel.find_effective_by_account_id(routing_slip.payment_account_id)
+                if cfs_account and cfs_account.status == CfsAccountStatus.PENDING.value or not cfs_account:
+                    status = RoutingSlipStatus.COMPLETE.value if routing_slip.remaining_amount == 0 \
+                        else RoutingSlipStatus.ACTIVE.value
 
             routing_slip.status = status
 
@@ -431,19 +435,19 @@ class RoutingSlip:  # pylint: disable=too-many-instance-attributes, too-many-pub
         payments = PaymentModel.find_payments_for_routing_slip(rs_number)
         for payment_request in request_json.get('payments'):
             if (payment := next(x for x in payments if x.id == payment_request.get('id'))):
-                paid_amount = payment_request.get('paidAmount', 0)
+                paid_amount = Decimal(str(payment_request.get('paidAmount', 0)))
                 correction_total += paid_amount - payment.paid_amount
                 if payment.payment_method_code == PaymentMethod.CASH.value:
                     comment += f'Cash Payment corrected amount' \
-                        f' ${payment.paid_amount} to ${paid_amount}\n'
+                        f' from ${payment.paid_amount} to ${paid_amount}\n'
                 else:
                     comment += f'Cheque Payment {payment.cheque_receipt_number}'
                     if cheque_receipt_number := payment_request.get('chequeReceiptNumber'):
                         payment.cheque_receipt_number = cheque_receipt_number
-                        comment += f' cheque receipt number corrected to {cheque_receipt_number}'
+                        comment += f', cheque receipt number corrected to {cheque_receipt_number}'
                     if paid_amount != payment.paid_amount:
-                        comment += f' corrected amount ${payment.paid_amount} to ${paid_amount}'
-                    comment += '\n'
+                        comment += f', corrected amount from ${payment.paid_amount} to ${paid_amount}'
+                    comment += '. \n'
                 payment.paid_amount = paid_amount
                 payment.paid_usd_amount = payment_request.get('paidUsdAmount', 0)
                 payment.flush()
@@ -534,7 +538,7 @@ class RoutingSlip:  # pylint: disable=too-many-instance-attributes, too-many-pub
         data_digits[1::2] = replacement_digits[:len(data_digits[1::2])]
         # Add all numbers together (of the 8 digits)
         # Subtract the 2nd digit of the sum from 10
-        checksum = ((10 - (sum(data_digits) % 10)) % 10)
+        checksum = (10 - (sum(data_digits) % 10)) % 10
         # The difference should equal the 9th digit of the routing slip ID
         if validation_digit != checksum:
             raise BusinessException(Error.FAS_INVALID_ROUTING_SLIP_DIGITS)

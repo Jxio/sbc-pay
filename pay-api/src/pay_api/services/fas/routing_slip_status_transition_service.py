@@ -38,13 +38,13 @@ class RoutingSlipStatusTransitionService:  # pylint: disable=too-many-instance-a
         ],
         RoutingSlipStatus.COMPLETE.value: [
             RoutingSlipStatus.NSF.value,
-            RoutingSlipStatus.VOID.value
+            RoutingSlipStatus.VOID.value,
+            RoutingSlipStatus.CORRECTION.value
         ],
         RoutingSlipStatus.HOLD.value: [
             RoutingSlipStatus.ACTIVE.value,
             RoutingSlipStatus.NSF.value,
-            RoutingSlipStatus.VOID.value,
-            RoutingSlipStatus.CORRECTION.value
+            RoutingSlipStatus.VOID.value
         ],
         RoutingSlipStatus.REFUND_REQUESTED.value: [
             RoutingSlipStatus.REFUND_AUTHORIZED.value,
