@@ -135,6 +135,7 @@ class Role(Enum):
     FAS_VOID = 'fas_void'
     FAS_CORRECTION = 'fas_correction'
     SANDBOX = 'sandbox'
+    VIEW_ALL_TRANSACTIONS = 'view_all_transactions'
 
 
 class Code(Enum):
@@ -195,6 +196,8 @@ class CorpType(Enum):
     NRO = 'NRO'
     PPR = 'PPR'
     VS = 'VS'
+    CSO = 'CSO'
+    RPT = 'RPT'
 
 
 class DisbursementStatus(Enum):

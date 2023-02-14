@@ -351,22 +351,24 @@ class Payment:  # pylint: disable=too-many-instance-attributes, too-many-public-
         if data is None or 'items' not in data:
             data = {'items': []}
 
-        invoice_ids = []
         for invoice_dao in purchases:
-            invoice_schema = InvoiceSchema(exclude=('receipts', 'payment_line_items', 'references'))
+            included_fields = ['id', 'corp_type_code', 'created_on', 'invoice_status_code', 'total', 'paid',
+                               'service_fees', 'references', 'folio_number', 'created_name', 'payment_method_code',
+                               'details', 'payment_account', 'business_identifier', 'created_by']
+            invoice_schema = InvoiceSchema(only=included_fields)
             invoice = invoice_schema.dump(invoice_dao)
             invoice['line_items'] = []
+            for payment_line_item in invoice_dao.payment_line_items:
+                # All we need for CSV and PDF and search.
+                line_item_schema = PaymentLineItemSchema(only=('gst', 'description', 'pst'))
+                line_item_dict = line_item_schema.dump(payment_line_item)
+                line_item_dict['filing_type_code'] = payment_line_item.fee_schedule.filing_type_code
+                invoice['line_items'].append(line_item_dict)
+                invoice['product'] = payment_line_item.fee_schedule.corp_type.product
+            if len(invoice_dao.references) > 0:
+                invoice['invoice_number'] = invoice_dao.references[0].invoice_number
             data['items'].append(invoice)
-            invoice_ids.append(invoice_dao.id)
-        # Query the payment line item to retrieve more details
-        payment_line_items = PaymentLineItem.find_by_invoice_ids(invoice_ids)
-        for payment_line_item in payment_line_items:
-            for invoice in data['items']:
-                if invoice.get('id') == payment_line_item.invoice_id:
-                    line_item_schema = PaymentLineItemSchema(many=False, exclude=('id', 'line_item_status_code'))
-                    line_item_dict = line_item_schema.dump(payment_line_item)
-                    line_item_dict['filing_type_code'] = payment_line_item.fee_schedule.filing_type_code
-                    invoice.get('line_items').append(line_item_dict)
+
         return data
 
     @staticmethod
