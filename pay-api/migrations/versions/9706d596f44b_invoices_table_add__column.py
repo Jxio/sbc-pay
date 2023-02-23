@@ -1,4 +1,4 @@
-"""empty message
+"""add refund_date column to invoices table
 
 Revision ID: 9706d596f44b
 Revises: e296910623cd
@@ -21,4 +21,4 @@ def upgrade():
 
 
 def downgrade():
-    pass
+    op.drop_column('invoice', 'refund_date')
