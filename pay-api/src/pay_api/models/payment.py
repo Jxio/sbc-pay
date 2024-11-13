@@ -323,9 +323,23 @@ class Payment(BaseModel):  # pylint: disable=too-many-instance-attributes
         if not return_all:
             count = cls.get_count(auth_account_id, search_filter)
             # Add pagination
-            sub_query = cls.generate_subquery(auth_account_id, search_filter, limit, page)
-            result = query.order_by(Invoice.id.desc()).filter(Invoice.id.in_(sub_query.subquery().select())).all()
             # If maximum number of records is provided, return it as total
+            paged_invoices = (
+                db.session.query(Invoice.id)
+                .join(PaymentAccount, Invoice.payment_account_id == PaymentAccount.id)
+                .filter(PaymentAccount.auth_account_id == auth_account_id)
+                .order_by(Invoice.id.desc())
+                .limit(limit)
+                .offset((page - 1) * limit)
+                .cte("paged_invoices")
+            )
+
+            result_query = (
+                query.join(paged_invoices, Invoice.id == paged_invoices.c.id)
+                .order_by(Invoice.id.desc())
+            )
+
+            result = result_query.all()
             if max_no_records > 0:
                 count = max_no_records if max_no_records < count else count
         elif max_no_records > 0:
@@ -388,8 +402,8 @@ class Payment(BaseModel):  # pylint: disable=too-many-instance-attributes
     @classmethod
     def filter(cls, query, auth_account_id: str, search_filter: Dict, add_outer_joins=False):
         """For filtering queries."""
-        if auth_account_id:
-            query = query.filter(PaymentAccount.auth_account_id == auth_account_id)
+        # if auth_account_id:
+        #     query = query.filter(PaymentAccount.auth_account_id == auth_account_id)
         if account_name := search_filter.get("accountName", None):
             query = query.filter(PaymentAccount.name.ilike(f"%{account_name}%"))
         if status_code := search_filter.get("statusCode", None):
@@ -513,7 +527,6 @@ class Payment(BaseModel):  # pylint: disable=too-many-instance-attributes
             cls.filter(sub_query, auth_account_id, search_filter, add_outer_joins=True)
             .with_entities(Invoice.id)
             .group_by(Invoice.id)
-            .order_by(Invoice.id.desc())
         )
         if limit:
             sub_query = sub_query.limit(limit)
