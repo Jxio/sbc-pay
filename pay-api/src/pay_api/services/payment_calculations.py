@@ -20,7 +20,6 @@ from decimal import Decimal
 
 import cattrs
 import humps
-from dateutil import parser
 from sqlalchemy import and_, case, func
 
 from pay_api.models import Invoice as InvoiceModel
@@ -94,7 +93,7 @@ def build_grouped_invoice_context(invoices: list[dict], statement: dict, stateme
             continue
 
         items = grouped[method]
-        transactions = build_transaction_rows(items, method, statement)
+        transactions = build_transaction_rows(items, method)
         summary = calculate_invoice_summaries(items, method, statement)
         has_staff_payment = False
         if method == PaymentMethod.INTERNAL.value:
@@ -148,7 +147,7 @@ def calculate_invoice_summaries(invoices: list[dict], payment_method: str, state
             "credits_total": 0.0,
         }
 
-    if payment_method not in [PaymentMethod.EFT.value, PaymentMethod.PAD.value]:
+    if payment_method != PaymentMethod.EFT.value:
         # For non-EFT: refund applies if paid == 0 and refund > 0
         refund_condition = case((and_(InvoiceModel.paid == 0, InvoiceModel.refund > 0), InvoiceModel.refund), else_=0)
     else:
@@ -171,29 +170,17 @@ def calculate_invoice_summaries(invoices: list[dict], payment_method: str, state
             refund_condition = case(
                 (and_(InvoiceModel.paid == 0, InvoiceModel.refund > 0), InvoiceModel.refund), else_=0
             )
-
-    if payment_method in [PaymentMethod.EFT.value, PaymentMethod.PAD.value] and statement_to_date:
-        paid_condition = case(
-            (
-                and_(
-                    InvoiceModel.payment_date.isnot(None),
-                    InvoiceModel.payment_date <= func.cast(statement_to_date, db.Date),
-                ),
-                InvoiceModel.paid,
-            ),
-            else_=0,
-        )
-    else:
-        paid_condition = InvoiceModel.paid
-
+    # Query to get aggregated values for the specific payment method and invoice IDs
     result = (
         db.session.query(
-            func.coalesce(func.sum(paid_condition), 0).label("paid_summary"),
-            func.coalesce(func.sum(InvoiceModel.total - refund_condition), 0).label("totals_summary"),
-            func.coalesce(func.sum(InvoiceModel.total - paid_condition - refund_condition), 0).label("due_summary"),
-            func.coalesce(func.sum(InvoiceModel.total - InvoiceModel.service_fees - InvoiceModel.gst), 0).label(
-                "fees_total"
-            ),
+            func.coalesce(func.sum(InvoiceModel.paid), 0).label("paid_summary"),
+            func.coalesce(func.sum(InvoiceModel.total), 0).label("totals_summary"),
+            func.coalesce(
+                func.sum(InvoiceModel.total - InvoiceModel.paid - refund_condition), 0
+            ).label("due_summary"),
+            func.coalesce(
+                func.sum(InvoiceModel.total - InvoiceModel.service_fees - InvoiceModel.gst), 0
+            ).label("fees_total"),
             func.coalesce(func.sum(InvoiceModel.service_fees), 0).label("service_fees_total"),
             func.coalesce(func.sum(InvoiceModel.gst), 0).label("gst_total"),
             func.coalesce(
@@ -221,18 +208,6 @@ def calculate_invoice_summaries(invoices: list[dict], payment_method: str, state
     return summary
 
 
-def get_statement_status_for_invoice(inv: dict, payment_method: str, statement: dict) -> str:
-    """For PAD: if payment_date is after statement.to_date, mark as 'Pending'."""
-    default_status = inv.get("status_code", "")
-
-    if payment_method == PaymentMethod.PAD.value and inv:
-        payment_date = inv.get("payment_date")
-        to_date = (statement or {}).get("to_date")
-        if payment_date and to_date and parser.parse(payment_date) > parser.parse(to_date):
-            return InvoiceStatus.APPROVED.value
-    return default_status
-
-
 @dataclass
 class TransactionRow:
     """transactions details."""
@@ -246,12 +221,9 @@ class TransactionRow:
     gst: str
     total: str
     extra: dict = field(default_factory=dict)
-    status_code: str = ""
 
 
-def build_transaction_rows(
-    invoices: list[dict], payment_method: PaymentMethod = None, statement: dict = None
-) -> list[dict]:
+def build_transaction_rows(invoices: List[dict], payment_method: PaymentMethod = None) -> List[dict]:
     """Build transactions for grouped_invoices."""
     rows = []
     for inv in invoices:
@@ -295,7 +267,7 @@ def build_transaction_rows(
         service_provided = False
         if payment_method:
             service_provided = determine_service_provision_status(inv.get("status_code", ""), payment_method)
-        row.status_code = get_statement_status_for_invoice(inv, payment_method, statement)
+
         row.extra["service_provided"] = service_provided
 
         row_dict = cattrs.unstructure(row)
