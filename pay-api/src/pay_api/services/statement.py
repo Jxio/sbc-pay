@@ -456,10 +456,10 @@ class Statement:  # pylint:disable=too-many-public-methods
             template_name=StatementTemplate.STATEMENT_REPORT.value,
             results=result_items,
         )
-
-        summary = Statement._build_statement_summary_for_methods(statement_dao, statement_purchases)
-        if summary:
-            report_inputs.statement_summary = summary
+        if extension == "pdf":
+            summary = Statement._build_statement_summary_for_methods(statement_dao, statement_purchases)
+            if summary:
+                report_inputs.statement_summary = summary
 
         report_response = InvoiceSearch.generate_payment_report(
             report_inputs, auth=kwargs.get("auth", None), statement=statement
