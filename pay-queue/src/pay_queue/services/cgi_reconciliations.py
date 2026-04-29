@@ -93,14 +93,20 @@ def _update_feedback(msg: dict[str, any], cloud_event):  # pylint:disable=too-ma
     has_errors = _process_ap_feedback(group_batches["AP"]) or has_errors
 
     if has_errors and not APP_CONFIG.DISABLE_EJV_ERROR_EMAIL:
+        error_messages = [
+            {
+                "error": "The GL disbursement failed for the electronic journal voucher batch. "
+                "It maybe necessary to contact the ministry to get the correct GL and update in the "
+                "BC Registries application. Unless this is an error is unrelated to the GL correctness. "
+                "The error report is attached with further details.",
+                "row": None,
+            },
+        ]
         email_service_params = EmailParams(
             subject="Payment Reconciliation Failure - GL disbursement failure for EJV",
             file_name=file_name,
             google_bucket_name=f"{current_app.config.get('GOOGLE_BUCKET_NAME')}/{bucket_folder_name}",
-            error_messages="The GL disbursement failed for the electronic journal voucher batch. "
-            "It maybe necessary to contact the ministry to get the correct GL and update in the "
-            "BC Registries application. Unless this is an error is unrelated to the GL correctness."
-            "The error report is attached with further details.",
+            error_messages=error_messages,
             ce=cloud_event,
             table_name=EjvFileModel.__tablename__,
         )
