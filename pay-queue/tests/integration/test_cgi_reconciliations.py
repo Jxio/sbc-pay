@@ -2186,8 +2186,7 @@ def test_ejv_batch_failure_sends_error_email(session, app, client, mocker):
     assert email_params.table_name == EjvFileModel.__tablename__
     assert len(email_params.error_messages) == 1
     assert (
-        "The GL disbursement failed for the electronic journal voucher batch"
-        in email_params.error_messages[0]["error"]
+        "The GL disbursement failed for the electronic journal voucher batch" in email_params.error_messages[0]["error"]
     )
 
     ejv_file = EjvFileModel.find_by_id(ejv_file_id)
