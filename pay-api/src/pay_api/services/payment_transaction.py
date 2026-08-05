@@ -47,7 +47,7 @@ from pay_api.utils.enums import (
 )
 from pay_api.utils.errors import Error
 from pay_api.utils.user_context import _get_token
-from pay_api.utils.util import get_topic_for_corp_type, is_valid_redirect_url
+from pay_api.utils.util import build_payment_event_attributes, get_topic_for_corp_type, is_valid_redirect_url
 
 from .payment import Payment
 
@@ -590,6 +590,9 @@ class PaymentTransaction:  # pylint: disable=too-many-instance-attributes, too-m
                     payload=PaymentTransaction.create_event_payload(invoice, status_code),
                     topic=get_topic_for_corp_type(invoice.corp_type_code),
                     corp_type=invoice.corp_type_code,
+                    attributes=build_payment_event_attributes(
+                        status_code, invoice.corp_type_code, invoice.payment_method_code
+                    ),
                 )
             )
 

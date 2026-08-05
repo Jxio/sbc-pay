@@ -320,10 +320,30 @@ def cents_to_decimal(amount: int):
     return amount / 100
 
 
+def build_payment_event_attributes(status_code: str, corp_type_code: str, payment_method: str) -> dict[str, str]:
+    """Return the Pub/Sub message attributes published alongside a payment event."""
+    return {
+        "statusCode": status_code,
+        "corpTypeCode": corp_type_code,
+        "paymentMethod": payment_method,
+    }
+
+
+def get_partner_corp_types() -> set[str]:
+    """Return the corp types configured to publish to the partner topic."""
+    configured = current_app.config.get("PARTNER_CORP_TYPES") or ""
+    return {corp_type.strip() for corp_type in configured.split(",") if corp_type.strip()}
+
+
 def get_topic_for_corp_type(corp_type: str):
     """Return a topic to direct the queue message to."""
     # Will fix this promptly and move this away so it doesn't cause circular dependencies.
     from ..services.code import Code as CodeService  # pylint: disable=import-outside-toplevel  # noqa: TID252
+
+    # Partner corp types are checked first: their events go to a dedicated topic that
+    # external partners subscribe to directly, rather than the usual product topic.
+    if corp_type and corp_type in get_partner_corp_types():
+        return current_app.config.get("PARTNER_PAY_TOPIC")
 
     if corp_type == CorpType.NRO.value:
         return current_app.config.get("NAMEX_PAY_TOPIC")
